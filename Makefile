@@ -44,7 +44,7 @@ all: \
   $(BINDIR)string_utils_test \
   $(BINDIR)yargs_test \
   $(BINDIR)app_main_test \
-  $(BINDIR)v4l2_opengl
+  $(BINDIR)tflite_face
 
 clean:
 	rm -rf $(BUILDDIR)
@@ -110,7 +110,7 @@ $(BINDIR)app_main_test: \
 run_app_main_test: $(BINDIR)app_main_test
 	$<
 
-$(BINDIR)v4l2_opengl: \
+$(BINDIR)tflite_face: \
  $(OBJDIR)src/app_main.o \
  $(OBJDIR)src/capture_main.o \
  $(OBJDIR)src/main.o \
