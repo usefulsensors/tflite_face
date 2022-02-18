@@ -12,6 +12,7 @@
 
 #include "app_main.h"
 #include "capture_main.h"
+#include "tflite_main.h"
 #include "trace.h"
 
 Display *dpy;
@@ -41,12 +42,23 @@ static void DrawAQuad()
 {
     int width;
     int height;
-    uint8_t *texture_data;
+    uint8_t *texture_data = NULL;
     if (!get_latest_capture(&width, &height, &texture_data))
     {
         // Camera capture is not yet ready.
+        free(texture_data);
         return;
     }
+
+    Detection *detections = NULL;
+    int detections_count = 0;
+    if (!get_detections(&detections, &detections_count))
+    {
+        // Object detection is not yet ready.
+        free(detections);
+        return;
+    }
+
     CHECK_GL_ERRORS();
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
                  GL_UNSIGNED_BYTE, texture_data);
@@ -66,6 +78,8 @@ static void DrawAQuad()
     gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
     CHECK_GL_ERRORS();
 
+    glEnable(GL_TEXTURE_2D);
+
     glBegin(GL_QUADS);
     glColor3f(1.0f, 1.0f, 1.0f);
     glTexCoord2f(0.0f, 1.0f);
@@ -81,6 +95,24 @@ static void DrawAQuad()
     glVertex3f(-1.0f, 1.0f, 0.0f);
     glEnd();
     CHECK_GL_ERRORS();
+
+    glDisable(GL_TEXTURE_2D);
+
+    for (int i = 0; i < detections_count; ++i)
+    {
+        const Detection *detection = &detections[i];
+        const float x = detection->rect.min_x;
+        const float y = detection->rect.min_y;
+
+        glBegin(GL_QUADS);
+        glColor3f(1.0f, 0.0f, 1.0f);
+        glVertex3f(x, y, 0.0f);
+        glVertex3f(x + 0.02f, y, 0.0f);
+        glVertex3f(x + 0.02f, y + 0.02f, 0.0f);
+        glVertex3f(x, y + 0.02f, 0.0f);
+        glEnd();
+        CHECK_GL_ERRORS();
+    }
 }
 
 void *window_main(void *cookie)

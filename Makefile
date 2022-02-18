@@ -11,9 +11,12 @@ CCFLAGS := \
   -Isrc/utils
 
 LDFLAGS := \
+  -lm \
   -lX11 \
   -lGL \
-  -lGLU
+  -lGLU \
+  -Llib \
+  -ltensorflowlite_c
 
 TEST_CCFLAGS := \
   -fsanitize=address \
@@ -99,6 +102,7 @@ run_yargs_test: $(BINDIR)yargs_test
 $(BINDIR)app_main_test: \
  $(OBJDIR)src/app_main_test.o \
  $(OBJDIR)src/capture_main.o \
+ $(OBJDIR)src/tflite_main.o \
  $(OBJDIR)src/window_main.o \
  $(OBJDIR)src/third_party/lodepng.o \
  $(OBJDIR)src/utils/file_utils.o \
@@ -114,6 +118,7 @@ $(BINDIR)tflite_face: \
  $(OBJDIR)src/app_main.o \
  $(OBJDIR)src/capture_main.o \
  $(OBJDIR)src/main.o \
+ $(OBJDIR)src/tflite_main.o \
  $(OBJDIR)src/window_main.o \
  $(OBJDIR)src/third_party/lodepng.o \
  $(OBJDIR)src/utils/file_utils.o \
