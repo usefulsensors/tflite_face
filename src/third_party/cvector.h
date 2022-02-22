@@ -75,6 +75,24 @@
     } while (0)
 
 /**
+ * @brief cvector_resize - Requests that the vector capacity be at least enough
+ * to contain n elements and also sets the size.
+ * @param vec - the vector
+ * @param n - New size for the vector.
+ * @return void
+ */
+#define cvector_resize(vec, capacity)            \
+    do                                           \
+    {                                            \
+        size_t cv_cap = cvector_capacity(vec);   \
+        if (cv_cap < (capacity))                 \
+        {                                        \
+            cvector_grow((vec), (capacity));     \
+            cvector_set_size((vec), (capacity)); \
+        }                                        \
+    } while (0)
+
+/**
  * @brief cvector_erase - removes the element at index i from the vector
  * @param vec - the vector
  * @param i - index of element to remove
@@ -215,6 +233,11 @@
             cvector_grow(to, cvector_size(from));                       \
             cvector_set_size(to, cvector_size(from));                   \
             memcpy((to), (from), cvector_size(from) * sizeof(*(from))); \
+        }                                                               \
+        else                                                            \
+        {                                                               \
+            cvector_free(to);                                           \
+            to = NULL;                                                  \
         }                                                               \
     } while (0)
 

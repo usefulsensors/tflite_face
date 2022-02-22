@@ -47,7 +47,7 @@ static int fd = -1;
 struct buffer *buffers;
 static unsigned int n_buffers;
 static int out_buf;
-static int force_format;
+static int force_format = true;
 static int frame_count = 2;
 static int frame_number = 0;
 

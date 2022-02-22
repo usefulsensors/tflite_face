@@ -47,6 +47,7 @@ all: \
   $(BINDIR)string_utils_test \
   $(BINDIR)yargs_test \
   $(BINDIR)app_main_test \
+  $(BINDIR)tflite_main_test \
   $(BINDIR)tflite_face
 
 clean:
@@ -61,6 +62,7 @@ test: \
   run_file_utils_test \
   run_string_utils_test \
   run_yargs_test \
+  run_tflite_main_test \
   run_app_main_test
 
 $(OBJDIR)%.o: %.c $(DEPDIR)/%.d | $(DEPDIR)
@@ -112,6 +114,19 @@ $(BINDIR)app_main_test: \
 	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@ $(LDFLAGS)
 
 run_app_main_test: $(BINDIR)app_main_test
+	$<
+
+$(BINDIR)tflite_main_test: \
+ $(OBJDIR)src/tflite_main_test.o \
+ $(OBJDIR)src/capture_main.o \
+ $(OBJDIR)src/test_image_192.o \
+ $(OBJDIR)src/utils/file_utils.o \
+ $(OBJDIR)src/utils/string_utils.o \
+ $(OBJDIR)src/utils/yargs.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@ $(LDFLAGS)
+
+run_tflite_main_test: $(BINDIR)tflite_main_test
 	$<
 
 $(BINDIR)tflite_face: \

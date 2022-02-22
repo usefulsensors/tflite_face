@@ -78,6 +78,46 @@ static void DrawAQuad()
     gluLookAt(0., 0., 10., 0., 0., 0., 0., 1., 0.);
     CHECK_GL_ERRORS();
 
+    glDisable(GL_TEXTURE_2D);
+
+    for (int i = 0; i < detections_count; ++i)
+    {
+        const float scale = 2.0f;
+        const float offset = -0.5f;
+        const Detection *detection = &detections[i];
+        const float min_x = (detection->rect.min_x + offset) * scale;
+        const float min_y = (detection->rect.min_y + offset) * -scale;
+        const float max_x = (detection->rect.max_x + offset) * scale;
+        const float max_y = (detection->rect.max_y + offset) * -scale;
+
+        glBegin(GL_LINE_LOOP);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glVertex3f(min_x, min_y, 0.1f);
+        glVertex3f(min_x, max_y, 0.1f);
+        glVertex3f(max_x, max_y, 0.1f);
+        glVertex3f(max_x, min_y, 0.1f);
+        glEnd();
+        CHECK_GL_ERRORS();
+
+        for (int k = 0; k < NUM_KEYPOINTS_PER_BOX; ++k)
+        {
+            const float keypoint_x = detection->keypoints[k * 2];
+            const float keypoint_y = detection->keypoints[(k * 2) + 1];
+            const float min_x = (keypoint_x - 0.001f + offset) * scale;
+            const float min_y = (keypoint_y - 0.001f + offset) * -scale;
+            const float max_x = (keypoint_x + 0.001f + offset) * scale;
+            const float max_y = (keypoint_y + 0.001f + offset) * -scale;
+
+            glBegin(GL_LINE_LOOP);
+            glColor3f(1.0f, 1.0f, 1.0f);
+            glVertex3f(min_x, min_y, 0.1f);
+            glVertex3f(min_x, max_y, 0.1f);
+            glVertex3f(max_x, max_y, 0.1f);
+            glVertex3f(max_x, min_y, 0.1f);
+            glEnd();
+        }
+    }
+
     glEnable(GL_TEXTURE_2D);
 
     glBegin(GL_QUADS);
@@ -95,24 +135,6 @@ static void DrawAQuad()
     glVertex3f(-1.0f, 1.0f, 0.0f);
     glEnd();
     CHECK_GL_ERRORS();
-
-    glDisable(GL_TEXTURE_2D);
-
-    for (int i = 0; i < detections_count; ++i)
-    {
-        const Detection *detection = &detections[i];
-        const float x = detection->rect.min_x;
-        const float y = detection->rect.min_y;
-
-        glBegin(GL_QUADS);
-        glColor3f(1.0f, 0.0f, 1.0f);
-        glVertex3f(x, y, 0.0f);
-        glVertex3f(x + 0.02f, y, 0.0f);
-        glVertex3f(x + 0.02f, y + 0.02f, 0.0f);
-        glVertex3f(x, y + 0.02f, 0.0f);
-        glEnd();
-        CHECK_GL_ERRORS();
-    }
 }
 
 void *window_main(void *cookie)

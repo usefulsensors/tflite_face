@@ -103,11 +103,13 @@ typedef struct IntFloatPairStruct
     float second;
 } IntFloatPair;
 
+static const int box_count = 2304;
+static const int coords_count = 16;
 static const int num_coords_per_box = 4;
 
 static pthread_mutex_t g_detections_mutex = PTHREAD_MUTEX_INITIALIZER;
 static Detection *g_detections = NULL;
-static int g_detections_count = 0;
+static int g_detections_count = -1;
 
 static const char *tensor_type_name(TfLiteType type)
 {
@@ -181,7 +183,7 @@ static float calculate_scale(float min_scale, float max_scale, int stride_index,
     else
     {
         return min_scale +
-               (max_scale - min_scale) * 1.0 * stride_index / (num_strides - 1.0f);
+               (max_scale - min_scale) * 1.0f * stride_index / (num_strides - 1.0f);
     }
 }
 
@@ -263,6 +265,9 @@ static void generate_anchors(const AnchorOptions *options,
             cvector_push_back(anchor_width, scales[i] * ratio_sqrts);
         }
 
+        cvector_free(aspect_ratios);
+        cvector_free(scales);
+
         const int stride = options->strides[layer_id];
         const int feature_map_height =
             ceilf(1.0f * options->input_size_height / stride);
@@ -298,8 +303,11 @@ static void generate_anchors(const AnchorOptions *options,
                 }
             }
         }
+        cvector_free(anchor_width);
+        cvector_free(anchor_height);
         layer_id = last_same_stride_layer;
     }
+
     *anchors_out = anchors;
 }
 
@@ -331,12 +339,11 @@ static void generate_face_anchors(cvector_vector_type(Anchor) * anchors)
 static void decode_boxes(
     const DecodeBoxesOptions *options,
     const float *raw_boxes,
-    const float *raw_scores,
     cvector_vector_type(Anchor) anchors,
     cvector_vector_type(float) * boxes_out)
 {
     cvector_vector_type(float) boxes = NULL;
-    cvector_reserve(boxes, options->num_boxes * options->num_coords);
+    cvector_resize(boxes, options->num_boxes * options->num_coords);
     for (int i = 0; i < options->num_boxes; ++i)
     {
         const int box_offset =
@@ -344,7 +351,6 @@ static void decode_boxes(
 
         float y_center;
         float x_center;
-        ;
         float h;
         float w;
         if (options->reverse_output_order)
@@ -383,10 +389,10 @@ static void decode_boxes(
         const float ymax = y_center + h / 2.0f;
         const float xmax = x_center + w / 2.0f;
 
-        boxes[i * options->num_coords + 0] = ymin;
-        boxes[i * options->num_coords + 1] = xmin;
-        boxes[i * options->num_coords + 2] = ymax;
-        boxes[i * options->num_coords + 3] = xmax;
+        boxes[i * options->num_coords + 0] = xmin;
+        boxes[i * options->num_coords + 1] = ymin;
+        boxes[i * options->num_coords + 2] = xmax;
+        boxes[i * options->num_coords + 3] = ymax;
 
         for (int k = 0; k < options->num_keypoints; ++k)
         {
@@ -419,7 +425,6 @@ static void decode_boxes(
 
 static void decode_face_boxes(
     const float *raw_boxes,
-    const float *raw_scores,
     cvector_vector_type(Anchor) anchors,
     cvector_vector_type(float) * boxes_out)
 {
@@ -442,7 +447,7 @@ static void decode_face_boxes(
         false,  // flip_vertically
         0.6f,   // min_score_thresh
     };
-    decode_boxes(&options, raw_boxes, raw_scores, anchors, boxes_out);
+    decode_boxes(&options, raw_boxes, anchors, boxes_out);
 }
 
 static bool sort_by_second(const IntFloatPair *indexed_score_0,
@@ -513,8 +518,8 @@ static void rect_from_coords(const float *coords, Rectf *result)
 {
     result->min_x = coords[0];
     result->min_y = coords[1];
-    result->max_x = coords[0] + coords[2];
-    result->max_y = coords[1] + coords[3];
+    result->max_x = coords[2];
+    result->max_y = coords[3];
 }
 
 static float overlap_similarity(int overlap_type,
@@ -557,7 +562,7 @@ static float overlap_similarity(int overlap_type,
 static void unweighted_non_max_suppression(
     const NonMaxSuppressionOptions *options,
     cvector_vector_type(IntFloatPair) indexed_scores,
-    const float *coords,
+    const float *boxes,
     int max_num_detections,
     cvector_vector_type(Detection) * detections_out)
 {
@@ -567,7 +572,7 @@ static void unweighted_non_max_suppression(
     {
         IntFloatPair *indexed_score = &indexed_scores[i];
         const float *candidate_coords =
-            &coords[indexed_score->first * options->num_coords];
+            &boxes[indexed_score->first * options->num_coords];
         Rectf candidate_rect;
         rect_from_coords(candidate_coords + options->box_coord_offset,
                          &candidate_rect);
@@ -609,7 +614,7 @@ static void unweighted_non_max_suppression(
 static void weighted_non_max_suppression(
     const NonMaxSuppressionOptions *options,
     cvector_vector_type(IntFloatPair) indexed_scores,
-    const float *coords,
+    const float *boxes,
     int max_num_detections,
     cvector_vector_type(Detection) * detections_out)
 {
@@ -624,7 +629,7 @@ static void weighted_non_max_suppression(
         const int original_indexed_scores_size =
             cvector_size(remained_indexed_scores);
         const float *candidate_coords =
-            &coords[indexed_score->first * options->num_coords];
+            &boxes[indexed_score->first * options->num_coords];
         Rectf candidate_rect;
         rect_from_coords(candidate_coords + options->box_coord_offset,
                          &candidate_rect);
@@ -646,7 +651,7 @@ static void weighted_non_max_suppression(
             const IntFloatPair *remained_indexed_score =
                 &remained_indexed_scores[i];
             const float *remained_coords =
-                &coords[remained_indexed_score->first * options->num_coords];
+                &boxes[remained_indexed_score->first * options->num_coords];
             Rectf remained_rect;
             rect_from_coords(remained_coords + options->box_coord_offset,
                              &remained_rect);
@@ -678,7 +683,7 @@ static void weighted_non_max_suppression(
                 const float sub_score = sub_candidate->second;
                 total_score += sub_score;
                 const float *sub_candidate_coords =
-                    &coords[sub_candidate->first * options->num_coords];
+                    &boxes[sub_candidate->first * options->num_coords];
                 Rectf bbox;
                 rect_from_coords(sub_candidate_coords + options->box_coord_offset,
                                  &bbox);
@@ -708,7 +713,6 @@ static void weighted_non_max_suppression(
                     keypoints[(k * 2) + 1] / total_score;
             }
         }
-
         cvector_push_back(detections, weighted_detection);
         if (original_indexed_scores_size == cvector_size(remained))
         {
@@ -719,7 +723,6 @@ static void weighted_non_max_suppression(
             cvector_copy(remained, remained_indexed_scores);
         }
     }
-
     *detections_out = detections;
 }
 
@@ -731,11 +734,11 @@ static int sort_int_float_pair_by_second(const void *raw_a, const void *raw_b)
 }
 
 static void non_max_suppression(const NonMaxSuppressionOptions *options,
-                                const float *scores, const float *coords,
+                                const float *scores, const float *boxes,
                                 cvector_vector_type(Detection) * detections_out)
 {
     cvector_vector_type(IntFloatPair) indexed_scores = NULL;
-    cvector_reserve(indexed_scores, options->num_boxes);
+    cvector_resize(indexed_scores, options->num_boxes);
     for (int i = 0; i < options->num_boxes; ++i)
     {
         const IntFloatPair pair = {i, scores[i]};
@@ -752,23 +755,24 @@ static void non_max_suppression(const NonMaxSuppressionOptions *options,
     if (options->algorithm == NMS_WEIGHTED)
     {
         weighted_non_max_suppression(
-            options, indexed_scores, coords, max_num_detections, detections_out);
+            options, indexed_scores, boxes, max_num_detections, detections_out);
     }
     else
     {
         unweighted_non_max_suppression(
-            options, indexed_scores, coords, max_num_detections,
+            options, indexed_scores, boxes, max_num_detections,
             detections_out);
     }
+    cvector_free(indexed_scores);
 }
 
-static void non_max_suppression_faces(const float *scores, const float *coords,
+static void non_max_suppression_faces(const float *scores, const float *boxes,
                                       cvector_vector_type(Detection) * detections_out)
 {
     const NonMaxSuppressionOptions options = {
         1,                           // num_detection_streams
         -1,                          // max_num_detections
-        -1.0f,                       // min_score_threshold
+        0.1f,                        // min_score_threshold
         0.3f,                        // min_suppression_threshold
         NMS_INTERSECTION_OVER_UNION, // overlap_type
         true,                        // return_empty_detections
@@ -780,7 +784,7 @@ static void non_max_suppression_faces(const float *scores, const float *coords,
         2,                           // num_values_per_keypoint
         0,                           // box_coord_offset
     };
-    non_max_suppression(&options, scores, coords, detections_out);
+    non_max_suppression(&options, scores, boxes, detections_out);
 }
 
 static float *rescale(uint8_t *input, int input_width, int input_height,
@@ -839,10 +843,6 @@ static float *rescale(uint8_t *input, int input_width, int input_height,
             const float output_red = (((input_red / 255.0f) * 2.0f) - 1.0f);
             const float output_green = (((input_green / 255.0f) * 2.0f) - 1.0f);
             const float output_blue = (((input_blue / 255.0f) * 2.0f) - 1.0f);
-            if ((output_pixel + 2) >= output_end)
-            {
-                fprintf(stderr, "Foo?\n");
-            }
             output_pixel[0] = output_red;
             output_pixel[1] = output_green;
             output_pixel[2] = output_blue;
@@ -851,59 +851,113 @@ static float *rescale(uint8_t *input, int input_width, int input_height,
     return output;
 }
 
-void *tflite_main(void *cookie)
+static TfLiteInterpreter *init_interpreter(const char *model_filename)
 {
-    const char *model_filename = "models/face_detection_full_range.tflite";
     TfLiteModel *model = TfLiteModelCreateFromFile(model_filename);
 
     TfLiteInterpreterOptions *options = TfLiteInterpreterOptionsCreate();
     TfLiteInterpreter *interpreter = TfLiteInterpreterCreate(model, options);
 
-    TfLiteInterpreterAllocateTensors(interpreter);
-    TfLiteTensor *input_tensor =
-        TfLiteInterpreterGetInputTensor(interpreter, 0);
+    TfLiteInterpreterOptionsDelete(options);
+    TfLiteModelDelete(model);
 
-    assert(TfLiteTensorNumDims(input_tensor) == 4);
-    assert(TfLiteTensorDim(input_tensor, 0) == 1);
-    assert(TfLiteTensorDim(input_tensor, 3) == 3);
-    const int input_width = TfLiteTensorDim(input_tensor, 2);
-    const int input_height = TfLiteTensorDim(input_tensor, 1);
-    const size_t input_byte_count = TfLiteTensorByteSize(input_tensor);
+    return interpreter;
+}
+
+static void init_tensors(
+    TfLiteInterpreter *interpreter,
+    TfLiteTensor **input_tensor,
+    int *input_width, int *input_height, size_t *input_byte_count,
+    const TfLiteTensor **coords_tensor,
+    float **coords_data, size_t *coords_byte_count,
+    const TfLiteTensor **score_tensor,
+    float **score_data, size_t *score_byte_count)
+{
+
+    TfLiteInterpreterAllocateTensors(interpreter);
+    *input_tensor = TfLiteInterpreterGetInputTensor(interpreter, 0);
+
+    assert(TfLiteTensorNumDims(*input_tensor) == 4);
+    assert(TfLiteTensorDim(*input_tensor, 0) == 1);
+    assert(TfLiteTensorDim(*input_tensor, 3) == 3);
+    *input_width = TfLiteTensorDim(*input_tensor, 2);
+    *input_height = TfLiteTensorDim(*input_tensor, 1);
+    *input_byte_count = TfLiteTensorByteSize(*input_tensor);
 
     const int outputs_count =
         TfLiteInterpreterGetOutputTensorCount(interpreter);
     assert(outputs_count == 2);
 
-    const TfLiteTensor *coords_tensor =
-        TfLiteInterpreterGetOutputTensor(interpreter, 0);
+    *coords_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 0);
 
-    const int box_count = 2304;
-    const int coords_count = 16;
+    assert(TfLiteTensorNumDims(*coords_tensor) == 3);
+    assert(TfLiteTensorDim(*coords_tensor, 0) == 1);
+    assert(TfLiteTensorDim(*coords_tensor, 1) == box_count);
+    assert(TfLiteTensorDim(*coords_tensor, 2) == coords_count);
+    *coords_byte_count = TfLiteTensorByteSize(*coords_tensor);
+    *coords_data = malloc(*coords_byte_count);
+
+    *score_tensor = TfLiteInterpreterGetOutputTensor(interpreter, 1);
+
+    assert(TfLiteTensorNumDims(*score_tensor) == 3);
+    assert(TfLiteTensorDim(*score_tensor, 0) == 1);
+    assert(TfLiteTensorDim(*score_tensor, 1) == box_count);
+    assert(TfLiteTensorDim(*score_tensor, 2) == 1);
+    *score_byte_count = TfLiteTensorByteSize(*score_tensor);
+    *score_data = malloc(*score_byte_count);
+}
+
+static void run_model(TfLiteInterpreter *interpreter,
+                      const float *input_data,
+                      cvector_vector_type(Anchor) anchors,
+                      TfLiteTensor *input_tensor, size_t input_byte_count,
+                      const TfLiteTensor *coords_tensor, float *coords_data, size_t coords_byte_count,
+                      const TfLiteTensor *score_tensor, float *score_data, size_t score_byte_count,
+                      cvector_vector_type(Detection) * detections_out)
+{
+    TfLiteTensorCopyFromBuffer(input_tensor, input_data,
+                               input_byte_count);
+
+    TfLiteInterpreterInvoke(interpreter);
+
+    TfLiteTensorCopyToBuffer(coords_tensor, coords_data,
+                             coords_byte_count);
+    TfLiteTensorCopyToBuffer(score_tensor, score_data,
+                             score_byte_count);
+
+    cvector_vector_type(float) boxes;
+    decode_face_boxes(coords_data, anchors, &boxes);
+
+    cvector_vector_type(Detection) detections;
+    non_max_suppression_faces(score_data, boxes, &detections);
+
+    cvector_free(boxes);
+
+    *detections_out = detections;
+}
+
+void *tflite_main(void *cookie)
+{
+    const char *model_filename = "models/face_detection_full_range.tflite";
+    TfLiteInterpreter *interpreter = init_interpreter(model_filename);
+
+    TfLiteTensor *input_tensor = NULL;
+    int input_width;
+    int input_height;
+    size_t input_byte_count;
+    const TfLiteTensor *coords_tensor = NULL;
+    float *coords_data = NULL;
+    size_t coords_byte_count;
+    const TfLiteTensor *score_tensor = NULL;
+    float *score_data = NULL;
+    size_t score_byte_count;
+    init_tensors(interpreter,
+                 &input_tensor, &input_width, &input_height, &input_byte_count,
+                 &coords_tensor, &coords_data, &coords_byte_count,
+                 &score_tensor, &score_data, &score_byte_count);
 
     cvector_vector_type(Anchor) anchors = NULL;
     generate_face_anchors(&anchors);
-    TRACE_SIZ(cvector_size(anchors));
-
-    assert(TfLiteTensorNumDims(coords_tensor) == 3);
-    assert(TfLiteTensorDim(coords_tensor, 0) == 1);
-    assert(TfLiteTensorDim(coords_tensor, 1) == box_count);
-    assert(TfLiteTensorDim(coords_tensor, 2) == coords_count);
-    const size_t coords_byte_count = TfLiteTensorByteSize(coords_tensor);
-    float *coords_data = malloc(coords_byte_count);
-
-    const TfLiteTensor *score_tensor =
-        TfLiteInterpreterGetOutputTensor(interpreter, 1);
-
-    assert(TfLiteTensorNumDims(score_tensor) == 3);
-    assert(TfLiteTensorDim(score_tensor, 0) == 1);
-    assert(TfLiteTensorDim(score_tensor, 1) == box_count);
-    assert(TfLiteTensorDim(score_tensor, 2) == 1);
-    const size_t score_byte_count = TfLiteTensorByteSize(score_tensor);
-    float *score_data = malloc(score_byte_count);
-
-    print_tensor_info(input_tensor);
-    print_tensor_info(coords_tensor);
-    print_tensor_info(score_tensor);
 
     while (true)
     {
@@ -922,28 +976,16 @@ void *tflite_main(void *cookie)
                                        input_height);
         free(capture_data);
 
-        TfLiteTensorCopyFromBuffer(input_tensor, rescaled_data,
-                                   input_byte_count);
+        cvector_vector_type(Detection) detections = NULL;
+        run_model(interpreter, rescaled_data, anchors, input_tensor, input_byte_count,
+                  coords_tensor, coords_data, coords_byte_count,
+                  score_tensor, score_data, score_byte_count,
+                  &detections);
 
         free(rescaled_data);
 
-        TfLiteInterpreterInvoke(interpreter);
-
-        TfLiteTensorCopyToBuffer(coords_tensor, coords_data,
-                                 coords_byte_count);
-        TfLiteTensorCopyToBuffer(score_tensor, score_data,
-                                 score_byte_count);
-
-        cvector_vector_type(float) boxes;
-        decode_face_boxes(coords_data, score_data, anchors, &boxes);
-
-        cvector_vector_type(Detection) detections;
-        non_max_suppression_faces(score_data, coords_data, &detections);
-
-        cvector_free(boxes);
-
         pthread_mutex_lock(&g_detections_mutex);
-        cvector_free(detections);
+        cvector_free(g_detections);
         g_detections = cvector_begin(detections);
         g_detections_count = cvector_size(detections);
         pthread_mutex_unlock(&g_detections_mutex);
@@ -955,8 +997,6 @@ void *tflite_main(void *cookie)
     free(coords_data);
 
     TfLiteInterpreterDelete(interpreter);
-    TfLiteInterpreterOptionsDelete(options);
-    TfLiteModelDelete(model);
 
     return NULL;
 }
@@ -964,15 +1004,17 @@ void *tflite_main(void *cookie)
 bool get_detections(Detection **detections, int *detections_count)
 {
     pthread_mutex_lock(&g_detections_mutex);
-    const bool has_data = (g_detections != NULL);
+    const bool has_data = (g_detections_count != -1);
     if (has_data)
     {
-        *detections = calloc(1, sizeof(Detection));
         const size_t detections_byte_count =
             sizeof(Detection) * g_detections_count;
         *detections = calloc(1, detections_byte_count);
         *detections_count = g_detections_count;
-        memcpy(*detections, g_detections, detections_byte_count);
+        if (g_detections != NULL)
+        {
+            memcpy(*detections, g_detections, detections_byte_count);
+        }
     }
     else
     {
