@@ -13,6 +13,13 @@ typedef struct RectfStruct
 
 #define NUM_KEYPOINTS_PER_BOX (6)
 
+#define KP_LEFT_EYE (0)
+#define KP_RIGHT_EYE (1)
+#define KP_NOSE (2)
+#define KP_MOUTH (3)
+#define KP_LEFT_EAR (4)
+#define KP_RIGHT_EAR (5)
+
 typedef struct DetectionStruct
 {
     Rectf rect;

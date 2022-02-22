@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <memory.h>
 
 #include <X11/X.h>
@@ -37,6 +38,24 @@ unsigned int g_texture_id = 0;
                     err, gluErrorString(err));                                 \
         }                                                                      \
     } while (false)
+
+static bool is_facing(const Detection *detection)
+{
+    const float left_ear_x = detection->keypoints[KP_LEFT_EAR * 2];
+    const float left_eye_x = detection->keypoints[KP_LEFT_EYE * 2];
+
+    const float right_ear_x = detection->keypoints[KP_RIGHT_EAR * 2];
+    const float right_eye_x = detection->keypoints[KP_RIGHT_EYE * 2];
+
+    const float left_distance = left_eye_x - left_ear_x;
+    const float right_distance = right_ear_x - right_eye_x;
+
+    const float bigger_distance = fmaxf(left_distance, right_distance);
+    const float smaller_distance = fminf(left_distance, right_distance);
+
+    const float facing_ratio = smaller_distance / bigger_distance;
+    return (facing_ratio > 0.75f);
+}
 
 static void DrawAQuad()
 {
@@ -82,9 +101,14 @@ static void DrawAQuad()
 
     for (int i = 0; i < detections_count; ++i)
     {
+        const Detection *detection = &detections[i];
+        if (!is_facing(detection))
+        {
+            continue;
+        }
+
         const float scale = 2.0f;
         const float offset = -0.5f;
-        const Detection *detection = &detections[i];
         const float min_x = (detection->rect.min_x + offset) * scale;
         const float min_y = (detection->rect.min_y + offset) * -scale;
         const float max_x = (detection->rect.max_x + offset) * scale;
