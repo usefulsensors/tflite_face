@@ -16,7 +16,7 @@ LDFLAGS := \
   -lGL \
   -lGLU \
   -Llib \
-  -ltensorflowlite_c
+  -ltensorflowlite
 
 TEST_CCFLAGS := \
   -fsanitize=address \
