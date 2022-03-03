@@ -1,0 +1,168 @@
+CC := gcc
+CPP := g++
+
+COMMON_FLAGS := \
+  -Wall \
+  -Wno-unused \
+  -g \
+  -O3 \
+  -Isrc \
+  -Isrc/third_party \
+  -Isrc/utils \
+  -Isrc/third_party/libcamera \
+  -isystem /usr/include/libcamera
+
+CCFLAGS := \
+  $(COMMON_FLAGS) \
+  -std=gnu99
+
+CPPFLAGS := \
+  $(COMMON_FLAGS) \
+  -std=c++17
+
+LDFLAGS := \
+  -lpthread \
+  -lX11 \
+  -lGL \
+  -lGLU \
+  -lstdc++ \
+  -lboost_program_options \
+  -lcamera \
+  -lcamera-base \
+  -lm \
+  -ltensorflowlite_c
+
+TEST_CCFLAGS :=
+
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)$*.d
+TEST_DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)$*_test.d
+
+BUILDDIR = build/
+OBJDIR := $(BUILDDIR)obj/
+BINDIR := $(BUILDDIR)bin/
+DEPDIR := $(BUILDDIR)dep/
+LIBDIR := $(BUILDDIR)lib/
+
+.PHONY: all clean test
+
+all: \
+  $(BINDIR)file_utils_test \
+  $(BINDIR)string_utils_test \
+  $(BINDIR)yargs_test \
+  $(BINDIR)app_main_test \
+  $(BINDIR)v4l2_opengl
+
+clean:
+	rm -rf $(BUILDDIR)
+
+clean_src:
+	rm -rf $(OBJDIR)
+	rm -rf $(BINDIR)
+	rm -rf $(DEPDIR)
+
+test: \
+  run_file_utils_test \
+  run_string_utils_test \
+  run_yargs_test \
+  run_app_main_test
+
+$(OBJDIR)%.o: %.c $(DEPDIR)/%.d | $(DEPDIR)
+	@mkdir -p $(dir $@)
+	@mkdir -p $(dir $(DEPDIR)$*_test.d)
+	$(CC) $(CCFLAGS) $(DEPFLAGS) -c $< -o $@
+
+$(OBJDIR)%_test.o: %_test.c $(DEPDIR)/%.d | $(DEPDIR)
+	@mkdir -p $(dir $@)
+	@mkdir -p $(dir $(DEPDIR)$*.d)
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $(TEST_DEPFLAGS) -c $< -o $@
+
+$(OBJDIR)%.o: %.cc
+	@mkdir -p $(dir $@)
+	$(CPP) $(CPPFLAGS) -c $< -o $@
+
+$(BINDIR)file_utils_test: \
+  $(OBJDIR)src/utils/file_utils_test.o \
+  $(OBJDIR)src/utils/string_utils.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@
+
+run_file_utils_test: $(BINDIR)file_utils_test
+	$<
+
+$(BINDIR)string_utils_test: \
+  $(OBJDIR)src/utils/string_utils_test.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@
+
+run_string_utils_test: $(BINDIR)string_utils_test
+	$<
+
+$(BINDIR)yargs_test: \
+  $(OBJDIR)src/utils/string_utils.o \
+  $(OBJDIR)src/utils/yargs_test.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@
+
+run_yargs_test: $(BINDIR)yargs_test
+	$<
+
+LIBCAMERA_OBJS := \
+ $(OBJDIR)src/third_party/libcamera/core/libcamera_app.o \
+ $(OBJDIR)src/third_party/libcamera/core/options.o \
+ $(OBJDIR)src/third_party/libcamera/core/post_processor.o \
+ $(OBJDIR)src/third_party/libcamera/core/version.o \
+ $(OBJDIR)src/third_party/libcamera/post_processing_stages/post_processing_stage.o \
+ $(OBJDIR)src/third_party/libcamera/preview/null_preview.o \
+ $(OBJDIR)src/third_party/libcamera/preview/preview.o
+
+$(BINDIR)app_main_test: \
+ $(OBJDIR)src/app_main_test.o \
+ $(OBJDIR)src/capture_main_pi.o \
+ $(OBJDIR)src/tflite_main.o \
+ $(OBJDIR)src/window_main.o \
+ $(OBJDIR)src/third_party/lodepng.o \
+ $(OBJDIR)src/utils/file_utils.o \
+ $(LIBCAMERA_OBJS) \
+ $(OBJDIR)src/utils/string_utils.o \
+ $(OBJDIR)src/utils/yargs.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@ $(LDFLAGS)
+
+run_app_main_test: $(BINDIR)app_main_test
+	$<
+
+$(BINDIR)tflite_main_test: \
+ $(OBJDIR)src/tflite_main_test.o \
+ $(OBJDIR)src/capture_main_pi.o \
+ $(LIBCAMERA_OBJS) \
+ $(OBJDIR)src/test_image_192.o \
+ $(OBJDIR)src/utils/file_utils.o \
+ $(OBJDIR)src/utils/string_utils.o \
+ $(OBJDIR)src/utils/yargs.o
+	@mkdir -p $(dir $@) 
+	$(CC) $(CCFLAGS) $(TEST_CCFLAGS) $^ -o $@ $(LDFLAGS)
+
+run_tflite_main_test: $(BINDIR)tflite_main_test
+	$<
+
+$(BINDIR)tflite_face: \
+ $(OBJDIR)src/app_main.o \
+ $(OBJDIR)src/capture_main_pi.o \
+ $(OBJDIR)src/tflite_main.o \
+ $(OBJDIR)src/main.o \
+ $(OBJDIR)src/window_main.o \
+ $(OBJDIR)src/third_party/lodepng.o \
+ $(LIBCAMERA_OBJS) \
+ $(OBJDIR)src/utils/file_utils.o \
+ $(OBJDIR)src/utils/string_utils.o \
+ $(OBJDIR)src/utils/yargs.o
+	@mkdir -p $(dir $@) 
+	$(CC) $^ -o $@ $(LDFLAGS)
+
+$(DEPDIR): ; @mkdir -p $@
+
+SRCS := $(shell find src/ -type f -name '*.c')
+DEPFILES := $(SRCS:%.c=$(DEPDIR)/%.d)
+$(DEPFILES):
+
+include $(wildcard $(DEPFILES))
