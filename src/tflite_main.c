@@ -111,6 +111,8 @@ static pthread_mutex_t g_detections_mutex = PTHREAD_MUTEX_INITIALIZER;
 static Detection *g_detections = NULL;
 static int g_detections_count = -1;
 
+static const char *signal_filename = "/tmp/signals/face_detections.txt";
+
 static const char *tensor_type_name(TfLiteType type)
 {
     const char *names[17] = {
@@ -936,6 +938,71 @@ static void run_model(TfLiteInterpreter *interpreter,
     *detections_out = detections;
 }
 
+static bool is_facing(const Detection *detection)
+{
+    const float left_ear_x = detection->keypoints[KP_LEFT_EAR * 2];
+    const float left_eye_x = detection->keypoints[KP_LEFT_EYE * 2];
+
+    const float right_ear_x = detection->keypoints[KP_RIGHT_EAR * 2];
+    const float right_eye_x = detection->keypoints[KP_RIGHT_EYE * 2];
+
+    const float left_distance = left_eye_x - left_ear_x;
+    const float right_distance = right_ear_x - right_eye_x;
+
+    const float bigger_distance = fmaxf(left_distance, right_distance);
+    const float smaller_distance = fminf(left_distance, right_distance);
+
+    const float facing_ratio = smaller_distance / bigger_distance;
+    return (facing_ratio > 0.70f);
+}
+
+static void output_signal(cvector_vector_type(Detection) detections)
+{
+    static int facing_count = 0;
+    bool are_any_facing = false;
+
+    for (int i = 0; i < cvector_size(detections); ++i)
+    {
+        Detection *detection = &detections[i];
+        if (is_facing(detection))
+        {
+            are_any_facing = true;
+        }
+    }
+    const int facing_max = 10;
+    if (are_any_facing)
+    {
+        facing_count += 1;
+        if (facing_count > facing_max)
+        {
+            facing_count = facing_max;
+        }
+    }
+    else
+    {
+        facing_count -= 1;
+        if (facing_count < 0)
+        {
+            facing_count = 0;
+        }
+    }
+
+    const int facing_threshold = 5;
+    if (facing_count >= facing_threshold)
+    {
+        FILE *file = fopen(signal_filename, "w");
+        const char *contents = "Facing";
+        const int contents_length = strlen(contents);
+        fwrite(contents, 1, contents_length, file);
+        fclose(file);
+        fprintf(stderr, "Facing\n");
+    }
+    else
+    {
+        remove(signal_filename);
+    }
+}
+
 void *tflite_main(void *cookie)
 {
     const char *model_filename = "models/face_detection_full_range.tflite";
@@ -981,8 +1048,9 @@ void *tflite_main(void *cookie)
                   coords_tensor, coords_data, coords_byte_count,
                   score_tensor, score_data, score_byte_count,
                   &detections);
-
         free(rescaled_data);
+
+        output_signal(detections);
 
         pthread_mutex_lock(&g_detections_mutex);
         cvector_free(g_detections);
