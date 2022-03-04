@@ -1057,6 +1057,11 @@ void *tflite_main(void *cookie)
         g_detections = cvector_begin(detections);
         g_detections_count = cvector_size(detections);
         pthread_mutex_unlock(&g_detections_mutex);
+
+        struct timespec time, remaining;
+        time.tv_sec = 0;
+        time.tv_nsec = 200000000L;
+        nanosleep(&time, &remaining);
     }
 
     cvector_free(anchors);
