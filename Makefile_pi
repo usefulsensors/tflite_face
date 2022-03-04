@@ -6,6 +6,7 @@ COMMON_FLAGS := \
   -Wno-unused \
   -g \
   -O3 \
+  -D__USE_GNU \
   -Isrc \
   -Isrc/third_party \
   -Isrc/utils \

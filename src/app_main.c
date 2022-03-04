@@ -1,12 +1,27 @@
 #include "app_main.h"
 
+#include <locale.h>
+#ifndef __USE_GNU
+#define __USE_GNU
+#endif
+#include <sched.h>
+
 #include <pthread.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "capture_main.h"
 #include "tflite_main.h"
 #include "window_main.h"
 #include "yargs.h"
+
+static void set_affinity()
+{
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(3, &cpuset);
+  sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+}
 
 int app_main(int argc, char **argv)
 {
@@ -22,6 +37,8 @@ int app_main(int argc, char **argv)
     yargs_print_usage(flags, flags_length, NULL);
     return 1;
   }
+
+  set_affinity();
 
   // Don't pass args to the sub-mains.
   char *dummy_argv[] = {argv[0]};

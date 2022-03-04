@@ -858,6 +858,7 @@ static TfLiteInterpreter *init_interpreter(const char *model_filename)
     TfLiteModel *model = TfLiteModelCreateFromFile(model_filename);
 
     TfLiteInterpreterOptions *options = TfLiteInterpreterOptionsCreate();
+    TfLiteInterpreterOptionsSetNumThreads(options, 1);
     TfLiteInterpreter *interpreter = TfLiteInterpreterCreate(model, options);
 
     TfLiteInterpreterOptionsDelete(options);
@@ -969,10 +970,12 @@ static void output_signal(cvector_vector_type(Detection) detections)
             are_any_facing = true;
         }
     }
-    const int facing_max = 10;
+    const int facing_max = 5;
     if (are_any_facing)
     {
         facing_count += 1;
+        fprintf(stderr, "+");
+        fflush(stderr);
         if (facing_count > facing_max)
         {
             facing_count = facing_max;
@@ -981,13 +984,22 @@ static void output_signal(cvector_vector_type(Detection) detections)
     else
     {
         facing_count -= 1;
+        if (cvector_size(detections) == 0)
+        {
+            fprintf(stderr, ".");
+        }
+        else
+        {
+            fprintf(stderr, "-");
+        }
+        fflush(stderr);
         if (facing_count < 0)
         {
             facing_count = 0;
         }
     }
 
-    const int facing_threshold = 5;
+    const int facing_threshold = 2;
     if (facing_count >= facing_threshold)
     {
         FILE *file = fopen(signal_filename, "w");
@@ -1060,7 +1072,7 @@ void *tflite_main(void *cookie)
 
         struct timespec time, remaining;
         time.tv_sec = 0;
-        time.tv_nsec = 200000000L;
+        time.tv_nsec = 100000000L;
         nanosleep(&time, &remaining);
     }
 
